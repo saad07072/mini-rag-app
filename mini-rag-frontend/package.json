@@ -19,5 +19,10 @@
     "eslint": "^9",
     "eslint-config-next": "15.5.2",
     "@eslint/eslintrc": "^3"
+  },
+  "allowScripts": {
+    "@tailwindcss/oxide@4.1.12": true,
+    "sharp@0.34.3": true,
+    "unrs-resolver@1.11.1": true
   }
 }

@@ -2,6 +2,25 @@
 
 import { useState } from 'react';
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8002';
+
+async function readApiResponse(response) {
+  const body = await response.text();
+  let data;
+
+  try {
+    data = body ? JSON.parse(body) : {};
+  } catch {
+    throw new Error(`Backend returned HTTP ${response.status}: ${body.slice(0, 200)}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(data.detail || `Backend returned HTTP ${response.status}`);
+  }
+
+  return data;
+}
+
 export default function Home() {
   const [documentText, setDocumentText] = useState('');
   const [documentFile, setDocumentFile] = useState(null);
@@ -22,19 +41,15 @@ export default function Home() {
     setAddTextStatus('Adding document...');
     
     try {
-      const response = await fetch('/add_document', {
+      const response = await fetch(`${BACKEND_URL}/add_document`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: documentText }),
       });
 
-      const data = await response.json();
-      if (response.ok) {
-        setAddTextStatus(`Document added successfully! ID: ${data.id}`);
-        setDocumentText('');
-      } else {
-        setAddTextStatus(`Error: ${data.detail}`);
-      }
+      const data = await readApiResponse(response);
+      setAddTextStatus(`Document added successfully! ID: ${data.id}`);
+      setDocumentText('');
     } catch (error) {
       console.error('Network or server error:', error);
       setAddTextStatus('Network or server error. Check your backend.');
@@ -54,18 +69,14 @@ export default function Home() {
     formData.append('file', documentFile);
 
     try {
-      const response = await fetch('/upload_document', {
+      const response = await fetch(`${BACKEND_URL}/upload_document`, {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
-      if (response.ok) {
-        setUploadFileStatus(`File "${data.filename}" uploaded successfully! ID: ${data.id}`);
-        setDocumentFile(null);
-      } else {
-        setUploadFileStatus(`Error: ${data.detail}`);
-      }
+      const data = await readApiResponse(response);
+      setUploadFileStatus(`File "${data.filename}" uploaded successfully! ID: ${data.id}`);
+      setDocumentFile(null);
     } catch (error) {
       console.error('Network or server error:', error);
       setUploadFileStatus('Network or server error. Check your backend.');
@@ -84,22 +95,16 @@ export default function Home() {
     setLlmAnswer('');
 
     try {
-      const response = await fetch('/generate_answer', {
+      const response = await fetch(`${BACKEND_URL}/generate_answer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: queryText }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setQueryStatus('');
-        setLlmAnswer(data.answer);
-        setSearchResults(data.sources.map((source, index) => ({ id: index + 1, text: source, score: 1 })));
-      } else {
-        setQueryStatus('Error generating answer.');
-        setSearchResults([]);
-        setLlmAnswer('');
-      }
+      const data = await readApiResponse(response);
+      setQueryStatus('');
+      setLlmAnswer(data.answer);
+      setSearchResults((data.sources || []).map((source, index) => ({ id: index + 1, text: source, score: 1 })));
     } catch (error) {
       console.error('Network or server error:', error);
       setQueryStatus('Network or server error. Check your backend.');
