@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0b0f1a;
+  --foreground: #e8eaf0;
 }
 
 @theme inline {
@@ -12,15 +12,182 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ---------- Animated gradient blobs behind the UI ---------- */
+.bg-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bg-aurora::before,
+.bg-aurora::after {
+  content: "";
+  position: absolute;
+  width: 60vw;
+  height: 60vw;
+  border-radius: 9999px;
+  filter: blur(110px);
+  opacity: 0.35;
+  animation: float 18s ease-in-out infinite;
+}
+
+.bg-aurora::before {
+  top: -20%;
+  left: -10%;
+  background: radial-gradient(circle at center, #6366f1, transparent 70%);
+}
+
+.bg-aurora::after {
+  bottom: -25%;
+  right: -10%;
+  background: radial-gradient(circle at center, #06b6d4, transparent 70%);
+  animation-delay: -9s;
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(4%, 6%) scale(1.08); }
+  66% { transform: translate(-3%, -4%) scale(0.95); }
+}
+
+/* ---------- Entrance animations ---------- */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-up {
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.text-shimmer {
+  background: linear-gradient(90deg, #a5b4fc 0%, #67e8f9 25%, #c4b5fd 50%, #67e8f9 75%, #a5b4fc 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 6s linear infinite;
+}
+
+/* ---------- Glass card ---------- */
+.glass-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* ---------- Buttons ---------- */
+.btn-gradient {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6 50%, #06b6d4);
+  background-size: 180% 180%;
+  transition: background-position 0.5s ease, transform 0.15s ease, box-shadow 0.3s ease;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
+}
+
+.btn-gradient:hover {
+  background-position: 100% 50%;
+  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.5);
+}
+
+.btn-gradient:active {
+  transform: scale(0.97);
+}
+
+.btn-gradient:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ---------- Dropzone ---------- */
+.dropzone {
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  transition: border-color 0.25s ease, background-color 0.25s ease, transform 0.25s ease;
+}
+
+.dropzone:hover {
+  border-color: rgba(129, 140, 248, 0.5);
+  background: rgba(129, 140, 248, 0.05);
+}
+
+.dropzone.dragging {
+  border-color: #818cf8;
+  background: rgba(129, 140, 248, 0.1);
+  transform: scale(1.01);
+}
+
+/* ---------- Spinner ---------- */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #a5b4fc;
+  border-radius: 9999px;
+  width: 1rem;
+  height: 1rem;
+  animation: spin 0.7s linear infinite;
+}
+
+/* ---------- Status pill fade ---------- */
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.9) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.status-pop {
+  animation: popIn 0.3s ease both;
+}
+
+/* ---------- Answer text reveal ---------- */
+@keyframes revealText {
+  from { opacity: 0; filter: blur(4px); transform: translateY(6px); }
+  to { opacity: 1; filter: blur(0); transform: translateY(0); }
+}
+
+.answer-reveal {
+  animation: revealText 0.5s ease both;
+}
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
