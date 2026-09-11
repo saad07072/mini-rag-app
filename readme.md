@@ -1,6 +1,6 @@
-# Mini RAG Full Stack Application
+# Mini RAG — Full Stack Application
 
-A Retrieval-Augmented Generation (RAG) application. Add text or upload a document, retrieve the most relevant content, and generate an answer with Gemini.
+A local, no-key Retrieval-Augmented Generation (RAG) application. Add text or upload a document, retrieve the most relevant content, and generate an answer with a local Llama model.
 
 The repository contains a FastAPI backend and a Next.js frontend. Cloud services are not required for the current implementation.
 
@@ -11,7 +11,7 @@ The repository contains a FastAPI backend and a Next.js frontend. Cloud services
 - Generate local embeddings with `all-MiniLM-L6-v2`.
 - Search documents with cosine similarity.
 - Rerank retrieved results with `cross-encoder/ms-marco-MiniLM-L-6-v2`.
-- Generate grounded answers with the Gemini API.
+- Generate grounded answers with `TinyLlama/TinyLlama-1.1B-Chat-v1.0`.
 - Display the answer and the source documents used for retrieval.
 - Handle non-JSON and failed backend responses in the frontend without showing a misleading network error.
 
@@ -31,7 +31,7 @@ FastAPI backend (localhost:8002)
 	+--> Sentence Transformer embeddings
 	+--> Cosine similarity retrieval
 	+--> CrossEncoder reranking
-	+--> Gemini hosted text generation
+	+--> TinyLlama local text generation
 ```
 
 The frontend uses `NEXT_PUBLIC_BACKEND_URL` when it is defined. For local development it defaults to `http://localhost:8002`. This direct connection avoids the slow local LLM request passing through the Next.js development rewrite proxy.
@@ -62,21 +62,19 @@ mini-rag-app/
 - Windows, macOS, or Linux
 - Python 3.10 or newer
 - Node.js and npm
-- Enough disk space and RAM for the local embedding, reranker, and Llama models
-- No Groq, Qdrant, or other API key is required
 
-## Quickstart on Windows
+### Backend
 
-### 1. Install backend dependencies
-
-```powershell
+```bash
 cd backend
 python -m venv venv
-.\venv\Scripts\Activate.ps1
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS/Linux
+
 pip install -r requirements.txt
 ```
 
-The first model-backed request may download the local embedding and reranker models. This requires internet access once; later runs can use the local model cache. Gemini requests use the server-side `GEMINI_API_KEY` environment variable.
+The first model-backed request may download Hugging Face models. This requires internet access once; later runs can use the local model cache.
 
 ### 2. Start the backend
 
@@ -87,23 +85,11 @@ cd backend
 python -m uvicorn main:app --host 0.0.0.0 --port 8002
 ```
 
-Backend health check:
+The API is available at `http://127.0.0.1:8002`. No `.env` file is required for local mode — see `.env.example`.
 
-```text
-http://localhost:8002/
-```
+### Frontend
 
-Expected response:
-
-```json
-{"status":"ok","mode":"local-rag"}
-```
-
-### 3. Install and start the frontend
-
-Open a second terminal:
-
-```powershell
+```bash
 cd mini-rag-frontend
 npm install
 npm run dev
@@ -185,7 +171,7 @@ Response shape:
 4. A query is embedded and compared with stored vectors using cosine similarity.
 5. The backend retrieves at least 3 candidates, or twice the requested `top_k` when that is larger.
 6. Candidates are reranked with `cross-encoder/ms-marco-MiniLM-L-6-v2`.
-7. The reranked context is passed to Gemini with an instruction to answer only from the documents.
+7. The reranked context is passed to TinyLlama with an instruction to answer only from the documents.
 8. The response returns the generated answer and the selected source texts.
 
 ## Full Application Report
@@ -200,7 +186,7 @@ Response shape:
 | Document ingestion methods | 2 |
 | Supported file formats | 3 |
 | Retrieval stages | 2 |
-| Local model components | 2 |
+| Local model components | 3 |
 | Default `top_k` | 3 |
 | Minimum retrieval candidates | 3 |
 | Candidate multiplier | 2x `top_k` |
@@ -219,7 +205,7 @@ Response shape:
 |---|---|---|
 | Embedding model | `sentence-transformers/all-MiniLM-L6-v2` | Convert documents and queries into vectors |
 | Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Reorder retrieved documents by relevance |
-| Generation model | Gemini API (`GEMINI_MODEL`) | Generate the final answer |
+| Generation model | `TinyLlama/TinyLlama-1.1B-Chat-v1.0` | Generate the final answer |
 
 ### Verified runtime report
 
@@ -235,22 +221,10 @@ Response shape:
 
 - Documents are stored only in memory. Restarting the backend removes all uploaded documents.
 - The current implementation stores each submitted document as one vector; it does not split long documents into chunks.
-- Gemini usage is subject to the provider's free-tier rate limits and terms.
+- Local Llama generation is slower on CPU and uses more system memory than a hosted model.
 - The answer is instructed to use retrieved context, but generated text should still be reviewed for accuracy.
 - The current CORS policy allows all origins and should be restricted before production deployment.
-- The frontend calls the backend through `NEXT_PUBLIC_BACKEND_URL`; there is no production localhost rewrite.
-
-## Deployment
-
-Deploy the backend and frontend as separate services:
-
-1. Push this repository to GitHub.
-2. In Render, create a Blueprint from the repository. The included `render.yaml` creates the backend service with the `backend` directory as its root. Set `CORS_ORIGINS` to the final Vercel URL, for example `https://mini-rag-your-name.vercel.app`.
-3. In Vercel, import the same repository and set the project root directory to `mini-rag-frontend`.
-4. Add the Vercel environment variable `NEXT_PUBLIC_BACKEND_URL=https://your-render-service.onrender.com`.
-5. Deploy the Vercel project, then replace the Render `CORS_ORIGINS` value with the actual Vercel URL and redeploy the backend.
-
-The Render service exposes `/health` for its health check. The free Render instance may sleep and may not have enough memory for all three local ML models; use a larger instance or replace local generation with a hosted model if it crashes during startup or inference. Documents remain in memory and are lost when the service restarts.
+- The old `next.config.mjs` rewrite remains in the project for compatibility, but the active frontend calls use `NEXT_PUBLIC_BACKEND_URL` directly.
 
 ## Troubleshooting
 
