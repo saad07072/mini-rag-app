@@ -1,61 +1,93 @@
 # Mini RAG App
 
-A lightweight document Q&A application built with a FastAPI backend and a Next.js frontend. It lets you add text or upload files, retrieve the most relevant content, and generate grounded answers from the uploaded documents.
+Mini RAG is a full-stack retrieval-augmented generation application for asking grounded questions over user-provided documents. It combines a FastAPI service, transformer-based semantic retrieval, cross-encoder reranking, and a Next.js interface deployed separately on Render and Vercel.
 
-The current implementation uses local embedding + reranking in Python and a Gemini model for final answer generation.
+**Live demo:** [mini-rag-app-eta.vercel.app](https://mini-rag-app-eta.vercel.app)
 
-## Features
+**Backend health:** [mini-rag-app-1-dlst.onrender.com/health](https://mini-rag-app-1-dlst.onrender.com/health)
 
-- Add text documents directly through the UI or API
-- Upload `.txt`, `.pdf`, and `.docx` files
-- Store documents in memory for quick local retrieval
-- Embed and search documents using sentence-transformers
-- Rerank retrieved matches for better relevance
-- Generate answers grounded in matching document content
-- Use a modern Next.js interface for interacting with the backend
+## Why This Project
+
+This project demonstrates an end-to-end AI product workflow rather than a single model call:
+
+- Users add text or upload `.txt`, `.pdf`, and `.docx` files.
+- Documents are embedded into vectors and stored in an in-memory retrieval index.
+- Queries use cosine similarity to retrieve relevant documents.
+- A cross-encoder reranks the strongest candidates.
+- Gemini generates an answer using only the reranked context.
+- The browser frontend communicates with the deployed API through configurable CORS and environment variables.
+
+## Implementation Snapshot
+
+| Area | Current implementation |
+| --- | --- |
+| API surface | 6 FastAPI routes, including 2 health endpoints |
+| Supported files | 3 formats: `.txt`, `.pdf`, `.docx` |
+| Retrieval | `all-MiniLM-L6-v2` embeddings + cosine similarity |
+| Reranking | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
+| Default result count | Top 3 documents |
+| Document IDs | UUIDs, with optional custom IDs through the API |
+| Answer generation | Google Gemini through `google-genai` |
+| Backend deployment | Render, Python 3.11.9, Uvicorn |
+| Frontend deployment | Vercel, Next.js 15.5.25, React 19.1 |
+| Frontend route | Static `/` route with approximately 3.2 kB page payload |
 
 ## Tech Stack
 
-- Backend: FastAPI, Python
-- Frontend: Next.js, React
-- Embeddings: `sentence-transformers/all-MiniLM-L6-v2`
-- Reranking: `cross-encoder/ms-marco-MiniLM-L-6-v2`
-- LLM: Google Gemini via `google-genai`
-- Document parsing: `python-docx`, `PyPDF2`
+### Backend
+
+- Python 3.10+
+- FastAPI and Uvicorn
+- Sentence Transformers and PyTorch
+- NumPy for vector operations
+- Google Gemini via `google-genai`
+- `python-docx` and `PyPDF2` for document extraction
+- `python-dotenv` for local configuration
+
+### Frontend
+
+- Next.js 15.5.25 App Router
+- React 19.1
+- Tailwind CSS 4 with the PostCSS plugin
+- ESLint 9 and Next.js core web vitals rules
+- Client-side document upload, drag-and-drop, query, answer, and source views
+
+### Deployment
+
+- Render web service for the FastAPI backend
+- Vercel project rooted at `mini-rag-frontend`
+- Render health check at `/health`
+- CORS allowlist connecting the Vercel origin to the Render API
 
 ## Project Structure
 
 ```text
 mini-rag-app/
 ├── backend/
-│   ├── main.py
-│   ├── local_rag.py
-│   ├── qdrant_setup.py
+│   ├── main.py              # FastAPI routes, CORS, file parsing, Gemini calls
+│   ├── local_rag.py         # Embedding, vector search, and reranking pipeline
+│   ├── model_utils.py       # Model configuration helpers
+│   ├── test_model_utils.py  # Regression tests for model selection
 │   ├── requirements.txt
-│   ├── Procfile
-│   └── .env
+│   └── Procfile
 ├── mini-rag-frontend/
 │   ├── app/
-│   ├── public/
+│   │   ├── page.js          # Main client experience
+│   │   ├── layout.js
+│   │   └── globals.css
 │   ├── package.json
-│   ├── next.config.mjs
-│   └── eslint.config.mjs
-├── readme.md
-├── render.yaml
+│   ├── package-lock.json
+│   └── next.config.mjs
+├── render.yaml              # Render service and health-check configuration
 ├── requirements.txt
-└── .venv/
+└── readme.md
 ```
 
-## Requirements
+## Configuration
 
-- Python 3.10+
-- Node.js 18+
-- npm
-- A Google Gemini API key
+### Backend
 
-## Environment Setup
-
-Create a `.env` file inside the `backend` folder:
+Create `backend/.env` for local development:
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -63,114 +95,66 @@ GEMINI_MODEL=gemini-2.5-flash
 CORS_ORIGINS=http://localhost:3000
 ```
 
-If you also want to use Qdrant Cloud, add:
+For the deployed Render service, set:
 
 ```env
-QDRANT_URL=your_qdrant_url
-QDRANT_API_KEY=your_qdrant_api_key
+CORS_ORIGINS=https://mini-rag-app-eta.vercel.app
 ```
 
-## Backend Setup
+Keep API keys and other secrets out of Git. `render.yaml` configures Python `3.11.9`, installs `backend/requirements.txt`, starts Uvicorn on Render's `$PORT`, and monitors `/health`.
 
-```bash
-cd backend
-python -m venv .venv
+### Frontend
+
+Create `mini-rag-frontend/.env.local` for local development:
+
+```env
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8002
 ```
 
-On Windows PowerShell:
+For Vercel, set this environment variable for Production:
+
+```env
+NEXT_PUBLIC_BACKEND_URL=https://mini-rag-app-1-dlst.onrender.com
+```
+
+In Vercel project settings, set **Root Directory** to `mini-rag-frontend`. The project uses the default Next.js build output and runs `npm run build`.
+
+## Run Locally
+
+### Backend
 
 ```powershell
+cd backend
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
-
-On macOS/Linux:
-
-```bash
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-Start the backend:
-
-```bash
 uvicorn main:app --host 0.0.0.0 --port 8002 --reload
 ```
 
-The API will be available at:
+The API is available at `http://localhost:8002`. FastAPI documentation is available at `http://localhost:8002/docs`.
 
-```text
-http://localhost:8002
-```
+### Frontend
 
-## Frontend Setup
-
-```bash
+```powershell
 cd mini-rag-frontend
 npm install
 npm run dev
 ```
 
-Then open:
-
-```text
-http://localhost:3000
-```
+Open `http://localhost:3000` in a browser.
 
 ## API Overview
 
-### Health
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/` | Basic service status |
+| `GET` | `/health` | Render health check |
+| `POST` | `/add_document` | Embed and store text |
+| `POST` | `/upload_document` | Extract, embed, and store a file |
+| `POST` | `/query` | Return top-k retrieved documents |
+| `POST` | `/generate_answer` | Retrieve, rerank, and generate a grounded answer |
 
-```http
-GET /
-```
-
-Returns:
-
-```json
-{"status": "ok", "mode": "local-rag"}
-```
-
-### Add a document
-
-```http
-POST /add_document
-```
-
-Body:
-
-```json
-{
-  "text": "This is a sample document",
-  "id": "optional-custom-id"
-}
-```
-
-### Upload a file
-
-```http
-POST /upload_document
-```
-
-Form-data field:
-
-```text
-file=<document file>
-```
-
-Supported formats:
-
-- `.txt`
-- `.pdf`
-- `.docx`
-
-### Query documents
-
-```http
-POST /query
-```
-
-Body:
+Example request:
 
 ```json
 {
@@ -179,112 +163,69 @@ Body:
 }
 ```
 
-### Generate an answer
+The `/generate_answer` response contains an `answer` string and a `sources` array so the interface can show both the generated response and supporting document text.
 
-```http
-POST /generate_answer
-```
+## Retrieval Flow
 
-Body:
+1. The API extracts text from direct input or an uploaded file.
+2. `all-MiniLM-L6-v2` creates an embedding for the document.
+3. The document and embedding are added to the process-local vector store.
+4. A query embedding is compared with stored vectors using cosine similarity.
+5. Candidate text is reranked by `ms-marco-MiniLM-L-6-v2`.
+6. Gemini receives the reranked context and is instructed not to use information outside it.
 
-```json
-{
-  "text": "Answer based on the uploaded documents",
-  "top_k": 3
-}
-```
-
-Response:
-
-```json
-{
-  "answer": "Generated answer text",
-  "sources": ["Relevant source text 1", "Relevant source text 2"]
-}
-```
-
-## How It Works
-
-1. The backend reads text from a direct input or uploaded file.
-2. It embeds the text with a sentence-transformer model.
-3. It stores the document in an in-memory vector list.
-4. A user query is embedded and compared with stored vectors.
-5. The top matches are reranked for relevance.
-6. The final answer is generated using Gemini with retrieved context.
-
-## Deployment
-
-This repository includes a Render configuration for deployment through [render.yaml](render.yaml). The backend is configured to run as a Python web service and uses the health endpoint for monitoring.
-
-## Notes and Limitations
-
-- Documents are stored in memory only; restarting the backend clears the data.
-- Long documents are not chunked into sections yet.
-- The RAG flow is designed for local demos and lightweight document search use cases.
-- For production use, you should add persistent storage, chunking, stricter validation, and stronger security settings.
-
-## Troubleshooting
-
-### Backend fails to start
-
-Check that:
-
-- your Python environment is activated
-- dependencies were installed
-- the `.env` file contains a valid `GEMINI_API_KEY`
-
-### Frontend cannot reach the backend
-
-Ensure both services are running and that the frontend points to the correct backend URL. The default local backend URL is:
-
-```text
-http://localhost:8002
-```
-
-### Port already in use
-
-On Windows PowerShell:
-
-```powershell
-Get-NetTCPConnection -State Listen -LocalPort 3000,8002
-```
-
-Then stop the process if needed:
-
-```powershell
-Stop-Process -Id <PID> -Force
-```
-
-## License
-
-This project is intended for learning and local experimentation. Update this section if you want to add a formal license for distribution or production use.
-
-
-### Models fail to load
-
-Confirm the Python environment has the packages in `backend/requirements.txt` and that the machine can access Hugging Face on the first run. The app falls back to a source-based response if the text-generation pipeline cannot initialize.
+Embedding and reranker initialization use one-entry LRU caches, so each model is loaded once per backend process instead of once per request.
 
 ## Testing
 
-Frontend lint:
+Frontend production build and lint:
 
 ```powershell
 cd mini-rag-frontend
 npm run lint
+npm run build
 ```
 
-Model utility regression tests, when the backend environment is active:
+Backend regression tests:
 
 ```powershell
 cd backend
 python -m pytest test_model_utils.py
 ```
 
-## Future Improvements
+## Deployment
 
-- Add SQLite or FAISS persistence so documents survive restarts.
-- Split large documents into overlapping chunks before embedding.
-- Add authentication and restrict CORS for deployment.
-- Add streaming responses for long local generation requests.
-- Add automated end-to-end tests for upload, retrieval, and answer generation.
-- Add a production deployment configuration with separate frontend and backend environment variables.
+### Backend on Render
+
+The root `render.yaml` defines the `mini-rag-backend` Python web service:
+
+- Root directory: `backend`
+- Build command: `pip install --upgrade pip && pip install -r requirements.txt`
+- Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+- Health check: `/health`
+
+### Frontend on Vercel
+
+Import the repository into Vercel and configure:
+
+- Root Directory: `mini-rag-frontend`
+- Framework: Next.js
+- Build command: `npm run build`
+- Environment variable: `NEXT_PUBLIC_BACKEND_URL`
+
+After changing `NEXT_PUBLIC_BACKEND_URL`, redeploy Vercel because public Next.js environment variables are included at build time. After changing `CORS_ORIGINS`, redeploy Render so the API uses the new allowlist.
+
+## Current Limitations
+
+- Documents live in process memory and are cleared when the Render instance restarts.
+- Large documents are not yet split into overlapping chunks.
+- The free Render instance may sleep after inactivity, causing a slower first request.
+- Production hardening would add authentication, rate limiting, persistent storage, stricter upload limits, and automated end-to-end tests.
+
+## Roadmap
+
+- Add persistent vector storage with Qdrant or FAISS.
+- Chunk large documents with configurable overlap.
+- Add authentication and per-user document collections.
+- Add streaming answer responses and citations with document metadata.
+- Add CI for backend tests, frontend linting, and deployment smoke tests.
