@@ -7,7 +7,7 @@ from docx import Document as DocxDocument
 from PyPDF2 import PdfReader
 from io import BytesIO
 from dotenv import load_dotenv
-from transformers import pipeline
+from google import genai
 
 from local_rag import add_document_to_store, search_documents, rerank_documents
 
@@ -17,25 +17,22 @@ load_dotenv()
 app = FastAPI()
 
 # ---- CORS ----
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Local Llama-based text generator. This avoids API keys while keeping the app's
-# reasoning model closer to a modern open-source LLM.
-try:
-    generator = pipeline(
-        "text-generation",
-        model="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        device=-1,
-        torch_dtype=None,
-    )
-except Exception:
-    generator = None
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
 
 def extract_text_from_file(file: UploadFile) -> str:
@@ -146,16 +143,12 @@ async def generate_answer(query: Query) -> LLMResponse:
             f"Context:\n{context}\n\nQuestion: {query.text}\n\nAnswer:"
         )
 
-        if generator is not None:
-            generated = generator(
-                prompt,
-                max_new_tokens=160,
-                do_sample=True,
-                temperature=0.2,
-                top_p=0.9,
-                repetition_penalty=1.1,
+        if gemini_client is not None:
+            response = gemini_client.models.generate_content(
+                model=gemini_model,
+                contents=prompt,
             )
-            answer = generated[0]["generated_text"].replace(prompt, "").strip()
+            answer = (response.text or "").strip()
             if not answer:
                 answer = "I could not extract a clear answer from the provided documents."
         else:
@@ -172,3 +165,8 @@ async def generate_answer(query: Query) -> LLMResponse:
 @app.get("/")
 async def health_check():
     return {"status": "ok", "mode": "local-rag"}
+
+
+@app.get("/health")
+async def render_health_check():
+    return {"status": "ok"}

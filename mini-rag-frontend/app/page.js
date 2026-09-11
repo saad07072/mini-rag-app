@@ -211,7 +211,7 @@ export default function Home() {
               Mini RAG
             </h1>
             <p className="text-white/50 max-w-md mx-auto">
-              Add your documents, then ask questions grounded only in what you've uploaded.
+              Add your documents, then ask questions grounded only in what you&apos;ve uploaded.
             </p>
           </div>
 
