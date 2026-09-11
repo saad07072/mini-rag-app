@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8002";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://mini-rag-app-1-dlst.onrender.com";
 
 async function readApiResponse(response) {
   const body = await response.text();
