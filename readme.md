@@ -1,93 +1,109 @@
-# Mini RAG — Full Stack Application
+# Mini RAG App
 
-A local, no-key Retrieval-Augmented Generation (RAG) application. Add text or upload a document, retrieve the most relevant content, and generate an answer with a local Llama model.
+A lightweight document Q&A application built with a FastAPI backend and a Next.js frontend. It lets you add text or upload files, retrieve the most relevant content, and generate grounded answers from the uploaded documents.
 
-The repository contains a FastAPI backend and a Next.js frontend. Cloud services are not required for the current implementation.
+The current implementation uses local embedding + reranking in Python and a Gemini model for final answer generation.
 
-## Current Features
+## Features
 
-- Add documents directly as text.
-- Upload `.txt`, `.pdf`, and `.docx` files.
-- Generate local embeddings with `all-MiniLM-L6-v2`.
-- Search documents with cosine similarity.
-- Rerank retrieved results with `cross-encoder/ms-marco-MiniLM-L-6-v2`.
-- Generate grounded answers with `TinyLlama/TinyLlama-1.1B-Chat-v1.0`.
-- Display the answer and the source documents used for retrieval.
-- Handle non-JSON and failed backend responses in the frontend without showing a misleading network error.
+- Add text documents directly through the UI or API
+- Upload `.txt`, `.pdf`, and `.docx` files
+- Store documents in memory for quick local retrieval
+- Embed and search documents using sentence-transformers
+- Rerank retrieved matches for better relevance
+- Generate answers grounded in matching document content
+- Use a modern Next.js interface for interacting with the backend
 
-## Architecture
+## Tech Stack
 
-```text
-Browser
-	|
-	| HTTP requests to localhost:8002
-	v
-Next.js frontend (localhost:3000)
-	|
-	v
-FastAPI backend (localhost:8002)
-	|
-	+--> In-memory document store
-	+--> Sentence Transformer embeddings
-	+--> Cosine similarity retrieval
-	+--> CrossEncoder reranking
-	+--> TinyLlama local text generation
-```
-
-The frontend uses `NEXT_PUBLIC_BACKEND_URL` when it is defined. For local development it defaults to `http://localhost:8002`. This direct connection avoids the slow local LLM request passing through the Next.js development rewrite proxy.
+- Backend: FastAPI, Python
+- Frontend: Next.js, React
+- Embeddings: `sentence-transformers/all-MiniLM-L6-v2`
+- Reranking: `cross-encoder/ms-marco-MiniLM-L-6-v2`
+- LLM: Google Gemini via `google-genai`
+- Document parsing: `python-docx`, `PyPDF2`
 
 ## Project Structure
 
 ```text
 mini-rag-app/
-|-- backend/
-|   |-- main.py              FastAPI application and RAG orchestration
-|   |-- local_rag.py         In-memory retrieval and reranking logic
-|   |-- model_utils.py       Legacy Groq model fallback helpers
-|   |-- test_model_utils.py  Regression tests for model fallback helpers
-|   |-- requirements.txt      Python dependencies
-|   `-- Procfile             Process definition for deployment platforms
-|-- mini-rag-frontend/
-|   |-- app/page.js          Browser UI and API calls
-|   |-- app/globals.css      Global styles
-|   |-- app/layout.js        Next.js root layout
-|   |-- next.config.mjs      Next.js configuration
-|   `-- package.json          Frontend scripts and dependencies
-|-- requirements.txt         Root-level dependency file
-`-- readme.md
+├── backend/
+│   ├── main.py
+│   ├── local_rag.py
+│   ├── qdrant_setup.py
+│   ├── requirements.txt
+│   ├── Procfile
+│   └── .env
+├── mini-rag-frontend/
+│   ├── app/
+│   ├── public/
+│   ├── package.json
+│   ├── next.config.mjs
+│   └── eslint.config.mjs
+├── readme.md
+├── render.yaml
+├── requirements.txt
+└── .venv/
 ```
 
 ## Requirements
 
-- Windows, macOS, or Linux
-- Python 3.10 or newer
-- Node.js and npm
+- Python 3.10+
+- Node.js 18+
+- npm
+- A Google Gemini API key
 
-### Backend
+## Environment Setup
+
+Create a `.env` file inside the `backend` folder:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
+CORS_ORIGINS=http://localhost:3000
+```
+
+If you also want to use Qdrant Cloud, add:
+
+```env
+QDRANT_URL=your_qdrant_url
+QDRANT_API_KEY=your_qdrant_api_key
+```
+
+## Backend Setup
 
 ```bash
 cd backend
-python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # macOS/Linux
+python -m venv .venv
+```
 
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-The first model-backed request may download Hugging Face models. This requires internet access once; later runs can use the local model cache.
+On macOS/Linux:
 
-### 2. Start the backend
-
-Keep this terminal open:
-
-```powershell
-cd backend
-python -m uvicorn main:app --host 0.0.0.0 --port 8002
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-The API is available at `http://127.0.0.1:8002`. No `.env` file is required for local mode — see `.env.example`.
+Start the backend:
 
-### Frontend
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8002 --reload
+```
+
+The API will be available at:
+
+```text
+http://localhost:8002
+```
+
+## Frontend Setup
 
 ```bash
 cd mini-rag-frontend
@@ -95,159 +111,154 @@ npm install
 npm run dev
 ```
 
-Open the application at:
+Then open:
 
 ```text
 http://localhost:3000
 ```
 
-To use another backend URL:
+## API Overview
 
-```powershell
-$env:NEXT_PUBLIC_BACKEND_URL = "http://localhost:8002"
-npm run dev
+### Health
+
+```http
+GET /
 ```
 
-## API Reference
-
-All request bodies use JSON except `/upload_document`, which uses multipart form data.
-
-### `GET /`
-
-Returns the backend health status.
-
-### `POST /add_document`
-
-Request:
+Returns:
 
 ```json
-{"text":"A document to index","id":"optional-id"}
+{"status": "ok", "mode": "local-rag"}
 ```
 
-Returns a generated or supplied document ID.
+### Add a document
 
-### `POST /upload_document`
+```http
+POST /add_document
+```
 
-Form field:
+Body:
+
+```json
+{
+  "text": "This is a sample document",
+  "id": "optional-custom-id"
+}
+```
+
+### Upload a file
+
+```http
+POST /upload_document
+```
+
+Form-data field:
 
 ```text
 file=<document file>
 ```
 
-Supported file extensions: `.txt`, `.pdf`, `.docx`.
+Supported formats:
 
-### `POST /query`
+- `.txt`
+- `.pdf`
+- `.docx`
 
-Request:
+### Query documents
 
-```json
-{"text":"What is in the document?","top_k":3}
+```http
+POST /query
 ```
 
-Returns the top matching documents with IDs, text, and similarity scores.
-
-### `POST /generate_answer`
-
-Request:
-
-```json
-{"text":"Answer my question from the uploaded documents.","top_k":3}
-```
-
-Response shape:
+Body:
 
 ```json
 {
-	"answer": "Generated answer",
-	"sources": ["Relevant document text"]
+  "text": "What is this document about?",
+  "top_k": 3
 }
 ```
 
-## RAG Pipeline
+### Generate an answer
 
-1. The backend extracts text from direct input or an uploaded file.
-2. The text is embedded with `all-MiniLM-L6-v2`.
-3. The embedding and original text are stored in the in-memory vector store.
-4. A query is embedded and compared with stored vectors using cosine similarity.
-5. The backend retrieves at least 3 candidates, or twice the requested `top_k` when that is larger.
-6. Candidates are reranked with `cross-encoder/ms-marco-MiniLM-L-6-v2`.
-7. The reranked context is passed to TinyLlama with an instruction to answer only from the documents.
-8. The response returns the generated answer and the selected source texts.
+```http
+POST /generate_answer
+```
 
-## Full Application Report
+Body:
 
-### Numeric implementation report
+```json
+{
+  "text": "Answer based on the uploaded documents",
+  "top_k": 3
+}
+```
 
-| Metric | Value |
-|---|---:|
-| Frontend applications | 1 |
-| Backend applications | 1 |
-| HTTP API endpoints | 5 |
-| Document ingestion methods | 2 |
-| Supported file formats | 3 |
-| Retrieval stages | 2 |
-| Local model components | 3 |
-| Default `top_k` | 3 |
-| Minimum retrieval candidates | 3 |
-| Candidate multiplier | 2x `top_k` |
-| Maximum generated tokens | 160 |
-| Frontend port | 3000 |
-| Backend port | 8002 |
-| Required API keys | 0 |
-| Required cloud databases | 0 |
-| Persistent storage engines | 0 |
-| External LLM providers | 0 |
-| Supported document extensions | 3 |
+Response:
 
-### Local model report
+```json
+{
+  "answer": "Generated answer text",
+  "sources": ["Relevant source text 1", "Relevant source text 2"]
+}
+```
 
-| Component | Model | Purpose |
-|---|---|---|
-| Embedding model | `sentence-transformers/all-MiniLM-L6-v2` | Convert documents and queries into vectors |
-| Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Reorder retrieved documents by relevance |
-| Generation model | `TinyLlama/TinyLlama-1.1B-Chat-v1.0` | Generate the final answer |
+## How It Works
 
-### Verified runtime report
+1. The backend reads text from a direct input or uploaded file.
+2. It embeds the text with a sentence-transformer model.
+3. It stores the document in an in-memory vector list.
+4. A user query is embedded and compared with stored vectors.
+5. The top matches are reranked for relevance.
+6. The final answer is generated using Gemini with retrieved context.
 
-- Backend health endpoint: HTTP `200 OK`.
-- Direct `POST /generate_answer`: HTTP `200 OK` with JSON containing `answer` and `sources`.
-- Document upload endpoint: HTTP `200 OK` was verified during local testing.
-- Frontend development server: available at `http://localhost:3000`.
-- Backend development server: available at `http://localhost:8002`.
-- Frontend lint: passed with `npm run lint`.
-- Generation runs locally on CPU, so answer generation can take longer than document ingestion.
+## Deployment
 
-## Important Limitations
+This repository includes a Render configuration for deployment through [render.yaml](render.yaml). The backend is configured to run as a Python web service and uses the health endpoint for monitoring.
 
-- Documents are stored only in memory. Restarting the backend removes all uploaded documents.
-- The current implementation stores each submitted document as one vector; it does not split long documents into chunks.
-- Local Llama generation is slower on CPU and uses more system memory than a hosted model.
-- The answer is instructed to use retrieved context, but generated text should still be reviewed for accuracy.
-- The current CORS policy allows all origins and should be restricted before production deployment.
-- The old `next.config.mjs` rewrite remains in the project for compatibility, but the active frontend calls use `NEXT_PUBLIC_BACKEND_URL` directly.
+## Notes and Limitations
+
+- Documents are stored in memory only; restarting the backend clears the data.
+- Long documents are not chunked into sections yet.
+- The RAG flow is designed for local demos and lightweight document search use cases.
+- For production use, you should add persistent storage, chunking, stricter validation, and stronger security settings.
 
 ## Troubleshooting
 
+### Backend fails to start
+
+Check that:
+
+- your Python environment is activated
+- dependencies were installed
+- the `.env` file contains a valid `GEMINI_API_KEY`
+
+### Frontend cannot reach the backend
+
+Ensure both services are running and that the frontend points to the correct backend URL. The default local backend URL is:
+
+```text
+http://localhost:8002
+```
+
 ### Port already in use
 
-Find the process using a port:
+On Windows PowerShell:
 
 ```powershell
 Get-NetTCPConnection -State Listen -LocalPort 3000,8002
 ```
 
-Stop a process only when you have confirmed its PID:
+Then stop the process if needed:
 
 ```powershell
 Stop-Process -Id <PID> -Force
 ```
 
-### Frontend reports a network error
+## License
 
-1. Confirm the backend is running on port `8002`.
-2. Open `http://localhost:8002/` and check for the local RAG health response.
-3. Restart the Next.js development server after changing `NEXT_PUBLIC_BACKEND_URL`.
-4. Check the browser console for the actual HTTP status and response body.
+This project is intended for learning and local experimentation. Update this section if you want to add a formal license for distribution or production use.
+
 
 ### Models fail to load
 
