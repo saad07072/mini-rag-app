@@ -1,19 +1,30 @@
 from __future__ import annotations
 
 import uuid
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-from sentence_transformers import SentenceTransformer, CrossEncoder
-
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-reranker_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 VECTOR_STORE: List[Dict[str, Any]] = []
 
 
+@lru_cache(maxsize=1)
+def get_embedding_model():
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer("all-MiniLM-L6-v2")
+
+
+@lru_cache(maxsize=1)
+def get_reranker_model():
+    from sentence_transformers import CrossEncoder
+
+    return CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+
 def get_embedding(text: str):
-    return embedding_model.encode(text).astype(np.float32).tolist()
+    return get_embedding_model().encode(text).astype(np.float32).tolist()
 
 
 def cosine_similarity(vec_a, vec_b) -> float:
@@ -50,5 +61,5 @@ def search_documents(query_text: str, top_k: int = 3):
 def rerank_documents(query_text: str, texts: List[str], top_k: int = 3):
     if not texts:
         return []
-    score_pairs = reranker_model.predict([(query_text, text) for text in texts])
+    score_pairs = get_reranker_model().predict([(query_text, text) for text in texts])
     return sorted(zip(texts, score_pairs), key=lambda x: x[1], reverse=True)[:top_k]
