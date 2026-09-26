@@ -1,5 +1,8 @@
 import os
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Union, List
@@ -9,12 +12,27 @@ from io import BytesIO
 from dotenv import load_dotenv
 from google import genai
 
-from local_rag import add_document_to_store, search_documents, rerank_documents
+from local_rag import add_document_to_store, get_embedding_model, search_documents, rerank_documents
 
 # Load environment variables from a .env file
 load_dotenv()
 
-app = FastAPI()
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Initializing sentence-transformer embedding model")
+    try:
+        await run_in_threadpool(get_embedding_model)
+    except Exception:
+        logger.exception("Failed to initialize sentence-transformer embedding model")
+        raise
+    logger.info("Sentence-transformer embedding model initialized")
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 # ---- CORS ----
 allowed_origins = [
@@ -101,14 +119,22 @@ async def add_document(doc: Document):
 
 @app.post("/upload_document")
 async def upload_document(file: UploadFile):
+    logger.info("Upload started: filename=%r", file.filename)
     try:
-        content = extract_text_from_file(file)
-        doc_id = add_document_to_store(content, filename=file.filename)
-        return {"filename": file.filename, "id": doc_id, "status": "success"}
-    except HTTPException:
+        content = await run_in_threadpool(extract_text_from_file, file)
+        logger.info("File text extraction completed: filename=%r characters=%d", file.filename, len(content))
+        logger.info("Embedding/storage started: filename=%r", file.filename)
+        doc_id = await run_in_threadpool(add_document_to_store, content, filename=file.filename)
+        logger.info("Embedding/storage completed: filename=%r document_id=%s", file.filename, doc_id)
+        result = {"filename": file.filename, "id": doc_id, "status": "success"}
+        logger.info("Upload completed: filename=%r document_id=%s", file.filename, doc_id)
+        return result
+    except HTTPException as exc:
+        logger.warning("Upload failed: filename=%r HTTP %s: %s", file.filename, exc.status_code, exc.detail)
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"upload_document failed: {e}")
+        logger.exception("Upload failed: filename=%r", file.filename)
+        raise HTTPException(status_code=500, detail=f"upload_document failed: {e}") from e
 
 
 @app.post("/query")

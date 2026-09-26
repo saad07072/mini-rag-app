@@ -15,7 +15,8 @@ async function readApiResponse(response) {
   }
 
   if (!response.ok) {
-    throw new Error(data.detail || `Backend returned HTTP ${response.status}`);
+    const detail = typeof data.detail === "string" ? data.detail : body || "Unknown backend error";
+    throw new Error(`Backend returned HTTP ${response.status}: ${detail}`);
   }
 
   return data;
