@@ -1,6 +1,5 @@
 import os
 import logging
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,9 +9,8 @@ from docx import Document as DocxDocument
 from PyPDF2 import PdfReader
 from io import BytesIO
 from dotenv import load_dotenv
-from google import genai
 
-from local_rag import add_document_to_store, get_embedding_model, search_documents, rerank_documents
+from local_rag import add_document_to_store, get_gemini_client, search_documents
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -20,19 +18,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("Initializing sentence-transformer embedding model")
-    try:
-        await run_in_threadpool(get_embedding_model)
-    except Exception:
-        logger.exception("Failed to initialize sentence-transformer embedding model")
-        raise
-    logger.info("Sentence-transformer embedding model initialized")
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 # ---- CORS ----
 allowed_origins = [
@@ -48,9 +34,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-gemini_api_key = os.getenv("GEMINI_API_KEY")
 gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
+gemini_client = get_gemini_client()
 
 
 def extract_text_from_file(file: UploadFile) -> str:
@@ -111,7 +96,11 @@ class LLMResponse(BaseModel):
 @app.post("/add_document")
 async def add_document(doc: Document):
     try:
-        doc_id = add_document_to_store(doc.text, document_id=str(doc.id) if doc.id is not None else None)
+        doc_id = await run_in_threadpool(
+            add_document_to_store,
+            doc.text,
+            document_id=str(doc.id) if doc.id is not None else None,
+        )
         return {"status": "success", "id": doc_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"add_document failed: {e}")
@@ -140,7 +129,7 @@ async def upload_document(file: UploadFile):
 @app.post("/query")
 async def query_documents(query: Query) -> List[SearchResult]:
     try:
-        results = search_documents(query.text, top_k=query.top_k)
+        results = await run_in_threadpool(search_documents, query.text, top_k=query.top_k)
         return [
             SearchResult(id=str(doc["id"]), text=doc["text"], score=float(score))
             for doc, score in results
@@ -152,16 +141,19 @@ async def query_documents(query: Query) -> List[SearchResult]:
 @app.post("/generate_answer")
 async def generate_answer(query: Query) -> LLMResponse:
     try:
-        retrieved = search_documents(query.text, top_k=max(query.top_k * 2, 3))
+        retrieved = await run_in_threadpool(
+            search_documents,
+            query.text,
+            top_k=max(query.top_k * 2, 3),
+        )
         if not retrieved:
             return LLMResponse(
                 answer="No documents found yet. Upload a document first, then ask again.",
                 sources=[],
             )
 
-        texts = [doc["text"] for doc, _ in retrieved]
-        reranked = rerank_documents(query.text, texts, top_k=query.top_k)
-        context = "\n\n".join(f"Document {i+1}: {text}" for i, (text, _) in enumerate(reranked))
+        ranked = [(doc["text"], score) for doc, score in retrieved[:query.top_k]]
+        context = "\n\n".join(f"Document {i+1}: {text}" for i, (text, _) in enumerate(ranked))
 
         prompt = (
             "Use only the information in the context below to answer the user's question. "
@@ -170,7 +162,8 @@ async def generate_answer(query: Query) -> LLMResponse:
         )
 
         if gemini_client is not None:
-            response = gemini_client.models.generate_content(
+            response = await run_in_threadpool(
+                gemini_client.models.generate_content,
                 model=gemini_model,
                 contents=prompt,
             )
@@ -178,9 +171,9 @@ async def generate_answer(query: Query) -> LLMResponse:
             if not answer:
                 answer = "I could not extract a clear answer from the provided documents."
         else:
-            answer = "I could not generate a final answer locally, but these sources are relevant:\n\n" + "\n\n".join(reranked_text for reranked_text, _ in reranked)
+            answer = "Answer generation is unavailable; these sources are relevant:\n\n" + "\n\n".join(text for text, _ in ranked)
 
-        sources = [text for text, _ in reranked]
+        sources = [text for text, _ in ranked]
         return LLMResponse(answer=answer, sources=sources)
     except HTTPException:
         raise

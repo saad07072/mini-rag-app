@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import os
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
@@ -10,21 +11,46 @@ VECTOR_STORE: List[Dict[str, Any]] = []
 
 
 @lru_cache(maxsize=1)
-def get_embedding_model():
-    from sentence_transformers import SentenceTransformer
+def get_gemini_client():
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
 
-    return SentenceTransformer("all-MiniLM-L6-v2")
+    from google import genai
 
-
-@lru_cache(maxsize=1)
-def get_reranker_model():
-    from sentence_transformers import CrossEncoder
-
-    return CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    return genai.Client(api_key=api_key)
 
 
-def get_embedding(text: str):
-    return get_embedding_model().encode(text).astype(np.float32).tolist()
+def get_embedding(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> List[float]:
+    client = get_gemini_client()
+    if client is None:
+        raise RuntimeError("GEMINI_API_KEY is required to generate document embeddings")
+
+    from google.genai import types
+
+    chunks = [text[index:index + 6000] for index in range(0, len(text), 6000)]
+    if not chunks:
+        raise ValueError("Cannot generate an embedding for empty text")
+
+    embeddings = []
+    for index in range(0, len(chunks), 16):
+        response = client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=chunks[index:index + 16],
+            config=types.EmbedContentConfig(
+                task_type=task_type,
+                output_dimensionality=768,
+            ),
+        )
+        if not response.embeddings or any(item.values is None for item in response.embeddings):
+            raise RuntimeError("Gemini returned no document embeddings")
+        embeddings.extend(np.asarray(item.values, dtype=np.float32) for item in response.embeddings)
+
+    vector = np.mean(embeddings, axis=0)
+    norm = np.linalg.norm(vector)
+    if norm:
+        vector /= norm
+    return vector.tolist()
 
 
 def cosine_similarity(vec_a, vec_b) -> float:
@@ -42,7 +68,7 @@ def add_document_to_store(text: str, filename: Optional[str] = None, document_id
         "id": doc_id,
         "text": text,
         "filename": filename,
-        "embedding": get_embedding(text),
+        "embedding": get_embedding(text, task_type="RETRIEVAL_DOCUMENT"),
     })
     return doc_id
 
@@ -50,16 +76,9 @@ def add_document_to_store(text: str, filename: Optional[str] = None, document_id
 def search_documents(query_text: str, top_k: int = 3):
     if not VECTOR_STORE:
         return []
-    query_vector = get_embedding(query_text)
+    query_vector = get_embedding(query_text, task_type="RETRIEVAL_QUERY")
     scored = []
     for doc in VECTOR_STORE:
         scored.append((doc, cosine_similarity(query_vector, doc["embedding"])))
     scored.sort(key=lambda item: item[1], reverse=True)
     return scored[:top_k]
-
-
-def rerank_documents(query_text: str, texts: List[str], top_k: int = 3):
-    if not texts:
-        return []
-    score_pairs = get_reranker_model().predict([(query_text, text) for text in texts])
-    return sorted(zip(texts, score_pairs), key=lambda x: x[1], reverse=True)[:top_k]

@@ -5,7 +5,4 @@ python-dotenv
 google-genai
 python-docx
 PyPDF2
-transformers
-torch
-sentence-transformers
 numpy
