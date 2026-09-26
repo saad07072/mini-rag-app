@@ -34,7 +34,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+configured_gemini_model = os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
+gemini_model = {
+    "gemini-2.5-flash": "gemini-3.8-flash",
+    "models/gemini-2.5-flash": "gemini-3.8-flash",
+}.get(configured_gemini_model, configured_gemini_model)
+if gemini_model != configured_gemini_model:
+    logger.warning("Configured Gemini model %s is retired; using %s", configured_gemini_model, gemini_model)
 gemini_client = get_gemini_client()
 
 
