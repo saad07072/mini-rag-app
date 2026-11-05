@@ -4,7 +4,7 @@
 
 **Live app:** [mini-rag-app-delta.vercel.app](https://mini-rag-app-delta.vercel.app) · **API health:** [Render](https://mini-rag-app-1-dlst.onrender.com/health) · **API docs:** [Swagger UI](https://mini-rag-app-1-dlst.onrender.com/docs)
 
-<img src="mini-rag-frontend/public/mini-rag-app.png" alt="Mini RAG application interface" width="981" height="704" />
+<img src="mini-rag-frontend/public/mini-rag-app.png" alt="Mini RAG document upload and library interface" width="100%" />
 
 ## Product Overview
 
@@ -51,6 +51,17 @@ FastAPI API (Render)
 | Vector ranking | NumPy cosine similarity |
 | File extraction | PyPDF2, python-docx, UTF-8 text |
 | Hosting | Vercel (frontend), Render (API) |
+
+## Repository Layout
+
+- `backend/main.py` defines the FastAPI endpoints and extracts text from uploads.
+- `backend/local_rag.py` handles Gemini embeddings, in-memory storage, and similarity search.
+- `mini-rag-frontend/app/page.js` contains the document upload, library, and question-answering UI.
+- `render.yaml` configures the backend service for Render deployment.
+
+## Data Handling
+
+Document text is sent to Gemini to create embeddings, and retrieved text is sent as context when generating answers. The backend keeps documents in process memory rather than persistent storage, so they are cleared when the service restarts. Avoid uploading sensitive documents unless you are comfortable processing them through the configured Gemini service.
 
 ## Run Locally
 
