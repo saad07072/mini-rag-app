@@ -1,8 +1,14 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useRef, useState } from "react";
+import Link from "next/link";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://mini-rag-app-1-dlst.onrender.com";
+const EXAMPLE_QUESTIONS = [
+  "What are the main takeaways?",
+  "Summarize this document",
+  "What dates or deadlines are mentioned?",
+];
 
 async function readApiResponse(response) {
   const body = await response.text();
@@ -22,86 +28,34 @@ async function readApiResponse(response) {
   return data;
 }
 
-/* ---------- small icon set (inline SVG, no extra deps) ---------- */
-const Icon = {
-  Upload: (p) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
-      <path d="M12 16V4M12 4l-4 4M12 4l4 4" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-  File: (p) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M14 2v6h6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-  Search: (p) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
-      <circle cx="11" cy="11" r="7" />
-      <path d="m21 21-4.3-4.3" strokeLinecap="round" />
-    </svg>
-  ),
-  Spark: (p) => (
-    <svg viewBox="0 0 24 24" fill="currentColor" {...p}>
-      <path d="M12 2l1.8 5.6L19.4 9.4l-5.6 1.8L12 16.8l-1.8-5.6L4.6 9.4l5.6-1.8z" />
-    </svg>
-  ),
-  Check: (p) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...p}>
-      <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-  Alert: (p) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
-      <path d="M12 9v4M12 17h.01" strokeLinecap="round" />
-      <path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z" strokeLinejoin="round" />
-    </svg>
-  ),
-};
-
-/* ---------- status pill ---------- */
-function StatusPill({ text }) {
+function StatusMessage({ text }) {
   if (!text) return null;
-  const isError = /error/i.test(text);
+
+  const isError = /error|please|failed/i.test(text);
   const isLoading = /(uploading|adding|searching)/i.test(text);
 
   return (
-    <div
-      className={`status-pop mt-3 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium ${
-        isError
-          ? "bg-red-500/10 text-red-300 border border-red-500/30"
-          : isLoading
-          ? "bg-indigo-500/10 text-indigo-300 border border-indigo-500/30"
-          : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
-      }`}
+    <p
+      role={isError ? "alert" : "status"}
+      className={`mt-3 text-sm ${isError ? "text-red-700" : isLoading ? "text-slate-500" : "text-emerald-800"}`}
     >
-      {isLoading ? (
-        <span className="spinner" />
-      ) : isError ? (
-        <Icon.Alert className="w-4 h-4" />
-      ) : (
-        <Icon.Check className="w-4 h-4" />
-      )}
-      <span>{text}</span>
-    </div>
+      {text}
+    </p>
   );
 }
 
-function SectionCard({ children, className = "", delay = 0 }) {
+function FileKind({ kind }) {
   return (
-    <div
-      className={`glass-card rounded-2xl p-6 sm:p-7 animate-fade-up ${className}`}
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      {children}
-    </div>
+    <span className="file-kind" aria-label={`${kind} document`}>
+      {kind}
+    </span>
   );
 }
 
 export default function Home() {
   const [documentText, setDocumentText] = useState("");
   const [documentFile, setDocumentFile] = useState(null);
+  const [documents, setDocuments] = useState([]);
   const [addTextStatus, setAddTextStatus] = useState("");
   const [uploadFileStatus, setUploadFileStatus] = useState("");
   const [queryText, setQueryText] = useState("");
@@ -116,6 +70,7 @@ export default function Home() {
       setAddTextStatus("Please enter text to add.");
       return;
     }
+
     setAddTextStatus("Adding document...");
     try {
       const response = await fetch(`${BACKEND_URL}/add_document`, {
@@ -124,7 +79,11 @@ export default function Home() {
         body: JSON.stringify({ text: documentText }),
       });
       const data = await readApiResponse(response);
-      setAddTextStatus(`Document added successfully! ID: ${data.id}`);
+      setDocuments((current) => [
+        { id: data.id, name: "Pasted text", kind: "TXT" },
+        ...current,
+      ]);
+      setAddTextStatus("Document added and ready to search.");
       setDocumentText("");
     } catch (error) {
       console.error("Network or server error:", error);
@@ -132,16 +91,15 @@ export default function Home() {
     }
   };
 
-  const handleFileUpload = async (file) => {
-    const targetFile = file || documentFile;
-    if (!targetFile) {
+  const handleFileUpload = async (file = documentFile) => {
+    if (!file) {
       setUploadFileStatus("Please select a file to upload.");
       return;
     }
-    setUploadFileStatus(`Uploading "${targetFile.name}"...`);
 
+    setUploadFileStatus(`Uploading "${file.name}"...`);
     const formData = new FormData();
-    formData.append("file", targetFile);
+    formData.append("file", file);
 
     try {
       const response = await fetch(`${BACKEND_URL}/upload_document`, {
@@ -149,19 +107,27 @@ export default function Home() {
         body: formData,
       });
       const data = await readApiResponse(response);
-      setUploadFileStatus(`File "${data.filename}" uploaded successfully! ID: ${data.id}`);
+      const extension = file.name.split(".").pop()?.toUpperCase() || "FILE";
+      setDocuments((current) => [
+        { id: data.id, name: data.filename, kind: extension },
+        ...current,
+      ]);
+      setUploadFileStatus(`"${data.filename}" is ready to search.`);
       setDocumentFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
       console.error("Network or server error:", error);
       setUploadFileStatus(`Error: ${error.message}`);
     }
   };
 
-  const handleQuery = async () => {
-    if (!queryText.trim()) {
-      setQueryStatus("Please enter a query.");
+  const handleQuery = async (question = queryText) => {
+    if (!question.trim()) {
+      setQueryStatus("Enter a question to search your documents.");
       return;
     }
+
+    setQueryText(question);
     setQueryStatus("Searching...");
     setSearchResults([]);
     setLlmAnswer("");
@@ -170,13 +136,16 @@ export default function Home() {
       const response = await fetch(`${BACKEND_URL}/generate_answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: queryText }),
+        body: JSON.stringify({ text: question }),
       });
       const data = await readApiResponse(response);
       setQueryStatus("");
       setLlmAnswer(data.answer);
       setSearchResults(
-        (data.sources || []).map((source, index) => ({ id: index + 1, text: source, score: 1 }))
+        (Array.isArray(data.sources) ? data.sources : []).map((text, index) => ({
+          id: index + 1,
+          text,
+        }))
       );
     } catch (error) {
       console.error("Network or server error:", error);
@@ -186,10 +155,10 @@ export default function Home() {
     }
   };
 
-  const onDrop = (e) => {
-    e.preventDefault();
+  const onDrop = (event) => {
+    event.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
+    const file = event.dataTransfer.files?.[0];
     if (file) {
       setDocumentFile(file);
       handleFileUpload(file);
@@ -197,177 +166,233 @@ export default function Home() {
   };
 
   return (
-    <div className="relative min-h-screen">
-      <div className="bg-aurora" />
-
-      <div className="relative z-10 px-4 sm:px-6 py-14 sm:py-20">
-        <div className="max-w-3xl mx-auto space-y-8">
-          {/* Header */}
-          <div className="text-center space-y-3 animate-fade-up">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-indigo-200 tracking-wide">
-              <Icon.Spark className="w-3.5 h-3.5" />
-              RETRIEVAL-AUGMENTED GENERATION
-            </div>
-            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-shimmer">
-              Mini RAG
-            </h1>
-            <p className="text-white/50 max-w-md mx-auto">
-              Add your documents, then ask questions grounded only in what you&apos;ve uploaded.
-            </p>
+    <main className="min-h-screen">
+      <header className="app-header">
+        <div className="page-width flex items-center justify-between gap-4 py-4">
+          <Link className="brand" href="/" aria-label="Mini RAG home">
+            <span className="brand-mark" aria-hidden="true">M</span>
+            <span>
+              <span className="brand-name">Mini RAG</span>
+              <span className="brand-caption">DOCUMENT WORKSPACE</span>
+            </span>
+          </Link>
+          <div className="service-label">
+            <span className="service-dot" />
+            Gemini document search
           </div>
-
-          {/* Add Document */}
-          <SectionCard delay={80}>
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-300">
-                <Icon.File className="w-4.5 h-4.5" />
-              </div>
-              <h2 className="text-lg font-semibold text-white/90">Add a Document</h2>
-            </div>
-
-            <div className="space-y-3">
-              <label htmlFor="documentText" className="block text-sm text-white/50">
-                Paste text directly
-              </label>
-              <textarea
-                id="documentText"
-                rows="5"
-                placeholder="Enter the document text here..."
-                value={documentText}
-                onChange={(e) => setDocumentText(e.target.value)}
-                className="w-full p-3.5 rounded-xl bg-white/5 border border-white/10 text-white/90 placeholder-white/30 outline-none focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/20 transition resize-none"
-              />
-              <button
-                onClick={handleAddText}
-                disabled={addTextStatus === "Adding document..."}
-                className="btn-gradient w-full py-3 rounded-xl font-semibold text-white flex items-center justify-center gap-2"
-              >
-                Add Document (Text)
-              </button>
-              <StatusPill text={addTextStatus} />
-            </div>
-
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-white/10" />
-              </div>
-              <div className="relative flex justify-center">
-                <span className="bg-[#0b0f1a] px-3 text-xs text-white/30 tracking-wider">OR</span>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <label className="block text-sm text-white/50">Upload a file (.pdf, .txt, .docx)</label>
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={onDrop}
-                className={`dropzone rounded-xl p-8 text-center cursor-pointer ${isDragging ? "dragging" : ""}`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={(e) => setDocumentFile(e.target.files[0])}
-                />
-                <Icon.Upload className="w-7 h-7 mx-auto text-indigo-300/80 mb-2" />
-                <p className="text-white/70 text-sm">
-                  {documentFile ? (
-                    <span className="text-indigo-200 font-medium">{documentFile.name}</span>
-                  ) : (
-                    <>Drag & drop a file, or click to browse</>
-                  )}
-                </p>
-              </div>
-              <button
-                onClick={() => handleFileUpload()}
-                disabled={uploadFileStatus.startsWith("Uploading")}
-                className="btn-gradient w-full py-3 rounded-xl font-semibold text-white"
-              >
-                Upload Document (File)
-              </button>
-              <StatusPill text={uploadFileStatus} />
-            </div>
-          </SectionCard>
-
-          {/* Query */}
-          <SectionCard delay={160}>
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-300">
-                <Icon.Search className="w-4.5 h-4.5" />
-              </div>
-              <h2 className="text-lg font-semibold text-white/90">Query Documents</h2>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-3">
-              <input
-                type="text"
-                placeholder="What is the document about?"
-                value={queryText}
-                onChange={(e) => setQueryText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleQuery()}
-                className="flex-1 p-3.5 rounded-xl bg-white/5 border border-white/10 text-white/90 placeholder-white/30 outline-none focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-500/20 transition"
-              />
-              <button
-                onClick={handleQuery}
-                disabled={queryStatus === "Searching..."}
-                className="btn-gradient px-7 py-3 rounded-xl font-semibold text-white whitespace-nowrap"
-              >
-                Search
-              </button>
-            </div>
-            <StatusPill text={queryStatus} />
-          </SectionCard>
-
-          {/* Answer */}
-          <SectionCard delay={240}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center text-violet-300">
-                <Icon.Spark className="w-4.5 h-4.5" />
-              </div>
-              <h2 className="text-lg font-semibold text-white/90">Answer</h2>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-black/20 p-5 min-h-[5rem] flex items-center">
-              {llmAnswer ? (
-                <p key={llmAnswer} className="answer-reveal text-white/90 leading-relaxed">
-                  {llmAnswer}
-                </p>
-              ) : (
-                <p className="text-white/30 text-sm">Your generated answer will appear here...</p>
-              )}
-            </div>
-          </SectionCard>
-
-          {/* Sources */}
-          <SectionCard delay={320}>
-            <h2 className="text-lg font-semibold text-white/90 mb-4">Source Documents</h2>
-            <div className="space-y-3">
-              {searchResults.length > 0 ? (
-                searchResults.map((result, i) => (
-                  <div
-                    key={result.id}
-                    className="answer-reveal rounded-xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition"
-                    style={{ animationDelay: `${i * 80}ms` }}
-                  >
-                    <p className="text-sm font-semibold text-indigo-200 mb-1">
-                      Document {result.id}
-                    </p>
-                    <p className="text-sm text-white/60 leading-relaxed">{result.text}</p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-white/30 text-sm text-center py-4">
-                  Source documents will appear here...
-                </p>
-              )}
-            </div>
-          </SectionCard>
         </div>
+      </header>
+
+      <div className="page-width py-10 sm:py-14">
+        <section className="mb-8 sm:mb-10">
+          <p className="eyebrow">YOUR DOCUMENTS, IN CONTEXT</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+            A clearer way to find answers.
+          </h1>
+          <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
+            Add the documents you work with, then ask a question. Answers are generated from the
+            relevant material in your library.
+          </p>
+        </section>
+
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+          <section className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">BUILD YOUR LIBRARY</p>
+                <h2 className="panel-title">Add documents</h2>
+              </div>
+              <span className="step-number">01</span>
+            </div>
+
+            <label className="field-label" htmlFor="documentText">Paste text</label>
+            <textarea
+              id="documentText"
+              rows={5}
+              placeholder="Paste notes, an excerpt, or any text you want to search..."
+              value={documentText}
+              onChange={(event) => setDocumentText(event.target.value)}
+              className="text-field resize-y"
+            />
+            <button
+              onClick={handleAddText}
+              disabled={addTextStatus === "Adding document..."}
+              className="button button-secondary mt-3 w-full"
+            >
+              Add pasted text
+            </button>
+            <StatusMessage text={addTextStatus} />
+
+            <div className="my-6 flex items-center gap-3 text-xs font-medium uppercase tracking-wider text-slate-400">
+              <span className="h-px flex-1 bg-slate-200" />
+              or upload a file
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+
+            <div
+              onDragOver={(event) => {
+                event.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={onDrop}
+              className={`upload-area ${isDragging ? "upload-area-active" : ""}`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.txt,.docx"
+                className="sr-only"
+                id="documentFile"
+                onChange={(event) => setDocumentFile(event.target.files?.[0] || null)}
+              />
+              <label htmlFor="documentFile" className="upload-prompt">
+                <span className="upload-icon" aria-hidden="true">↑</span>
+                <span className="font-medium text-slate-800">
+                  {documentFile ? documentFile.name : "Choose a document"}
+                </span>
+                <span className="mt-1 text-sm text-slate-500">
+                  PDF, DOCX, or TXT · click to browse or drag it here
+                </span>
+              </label>
+            </div>
+            <button
+              onClick={() => handleFileUpload()}
+              disabled={uploadFileStatus.startsWith("Uploading")}
+              className="button button-primary mt-3 w-full"
+            >
+              Upload document
+            </button>
+            <StatusMessage text={uploadFileStatus} />
+          </section>
+
+          <section className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">AVAILABLE TO SEARCH</p>
+                <h2 className="panel-title">Your library</h2>
+              </div>
+              <span className="count-badge">{documents.length}</span>
+            </div>
+
+            {documents.length ? (
+              <>
+                <p className="mb-3 text-sm text-slate-500">
+                  Added in this session. Documents may be cleared when the service restarts.
+                </p>
+                <ul className="document-list" aria-label="Documents added this session">
+                  {documents.map((document, index) => (
+                    <li className="document-row" key={`${document.id}-${index}`}>
+                      <FileKind kind={document.kind} />
+                      <span className="min-w-0 flex-1">
+                        <span className="document-name">{document.name}</span>
+                        <span className="document-status">Ready to search</span>
+                      </span>
+                      <span className="ready-dot" aria-label="Ready" />
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <div className="empty-library">
+                <div className="empty-icon" aria-hidden="true">▤</div>
+                <h3 className="font-medium text-slate-800">Your library is ready</h3>
+                <p className="mt-1 max-w-xs text-sm leading-6 text-slate-500">
+                  Add a file or paste text. It will appear here once it has been processed.
+                </p>
+              </div>
+            )}
+
+            <div className="mt-6 border-t border-slate-100 pt-5">
+              <p className="field-label mb-3">Try an example question</p>
+              <div className="flex flex-wrap gap-2">
+                {EXAMPLE_QUESTIONS.map((question) => (
+                  <button
+                    className="question-chip"
+                    key={question}
+                    onClick={() => handleQuery(question)}
+                    disabled={queryStatus === "Searching..."}
+                  >
+                    {question}
+                  </button>
+                ))}
+              </div>
+              {documents.length === 0 && (
+                <p className="mt-3 text-xs leading-5 text-slate-400">
+                  Add a document before trying a question.
+                </p>
+              )}
+            </div>
+          </section>
+        </div>
+
+        <section className="panel mt-5">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">ASK YOUR LIBRARY</p>
+              <h2 className="panel-title">What would you like to know?</h2>
+            </div>
+            <span className="step-number">02</span>
+          </div>
+          <div className="query-row">
+            <label className="sr-only" htmlFor="queryText">Question</label>
+            <input
+              id="queryText"
+              type="text"
+              placeholder="Ask a question about your documents..."
+              value={queryText}
+              onChange={(event) => setQueryText(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && handleQuery()}
+              className="text-field"
+            />
+            <button
+              onClick={() => handleQuery()}
+              disabled={queryStatus === "Searching..."}
+              className="button button-primary query-button"
+            >
+              {queryStatus === "Searching..." ? "Searching..." : "Ask question"}
+            </button>
+          </div>
+          <StatusMessage text={queryStatus} />
+        </section>
+
+        {(llmAnswer || searchResults.length > 0) && (
+          <section className="panel mt-5" aria-live="polite">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">RESPONSE</p>
+                <h2 className="panel-title">Answer</h2>
+              </div>
+              {searchResults.length > 0 && (
+                <span className="source-count">
+                  {searchResults.length} {searchResults.length === 1 ? "source" : "sources"}
+                </span>
+              )}
+            </div>
+            {llmAnswer && <p className="answer-text">{llmAnswer}</p>}
+
+            {searchResults.length > 0 && (
+              <div className="mt-6 border-t border-slate-100 pt-5">
+                <h3 className="field-label mb-3">Retrieved source text</h3>
+                <ol className="space-y-3">
+                  {searchResults.map((result) => (
+                    <li className="source-card" key={result.id}>
+                      <span className="source-label">Source {result.id}</span>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                        {result.text}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </section>
+        )}
+
+        <footer className="py-8 text-center text-xs text-slate-400">
+          Answers are generated from retrieved document text. Check the source text for context.
+        </footer>
       </div>
-    </div>
+    </main>
   );
 }

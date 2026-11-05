@@ -1,24 +1,28 @@
-import os
 import unittest
+from unittest.mock import patch
 
-from model_utils import resolve_groq_model
+from local_rag import cosine_similarity, search_documents
 
 
-class ResolveGroqModelTest(unittest.TestCase):
-    def test_legacy_default_falls_back_to_supported_model(self):
-        self.assertEqual(resolve_groq_model("llama-3.1-8b-instant"), "llama-3.3-70b-versatile")
+class RetrievalTest(unittest.TestCase):
+    def test_cosine_similarity_of_identical_vectors_is_one(self):
+        self.assertAlmostEqual(cosine_similarity([1, 0], [1, 0]), 1.0)
 
-    def test_supported_model_is_preserved(self):
-        self.assertEqual(resolve_groq_model("llama-3.3-70b-versatile"), "llama-3.3-70b-versatile")
+    def test_cosine_similarity_of_zero_vector_is_zero(self):
+        self.assertEqual(cosine_similarity([0, 0], [1, 0]), 0.0)
 
-    def test_missing_env_uses_supported_default(self):
-        original = os.environ.get("GROQ_MODEL")
-        os.environ.pop("GROQ_MODEL", None)
-        try:
-            self.assertEqual(resolve_groq_model(None), "llama-3.3-70b-versatile")
-        finally:
-            if original is not None:
-                os.environ["GROQ_MODEL"] = original
+    def test_search_ranks_documents_by_similarity(self):
+        documents = [
+            {"id": "less-relevant", "text": "B", "embedding": [0, 1]},
+            {"id": "most-relevant", "text": "A", "embedding": [1, 0]},
+        ]
+        with (
+            patch("local_rag.VECTOR_STORE", documents),
+            patch("local_rag.get_embedding", return_value=[1, 0]),
+        ):
+            results = search_documents("query", top_k=1)
+
+        self.assertEqual([document["id"] for document, _ in results], ["most-relevant"])
 
 
 if __name__ == "__main__":
